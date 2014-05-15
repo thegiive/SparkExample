@@ -1,5 +1,7 @@
 package org.apache.spark.examples
 
+//#based on https://github.com/amplab/training/blob/ampcamp4/machine-learning/scala/solution/MovieLensALS.scala
+
 import java.util.Random
 
 import org.apache.log4j.Logger
@@ -11,62 +13,41 @@ import org.apache.spark.SparkConf
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.rdd._
-import org.apache.spark.mllib.recommendation.{ALS, Rating, MatrixFactorizationModel}
+//import org.apache.spark.mllib.recommendation.{ALS, Rating, MatrixFactorizationModel}
+//import org.apache.spark.mllib.recommendation.MatrixFactorizationModel
+
+
 
 object CF1 {
 
   def main(args: Array[String]) {
+      // .setAppName("ALS").set("spark.executor.memory", "90g")
 
     val conf = new SparkConf().setMaster(args(0))
-      .setAppName("Simple App").set("spark.executor.memory", "6g")
+      .setAppName("ALS")
+      .set("spark.executor.memory", "90g")
+      .set("spark.storage.memoryFraction" , "0.2")
+      .set("spark.shuffle.memoryFraction" , "0.3")      
+      .set("spark.default.parallelism" , args(4))
       .setJars( SparkContext.jarOfClass(this.getClass) ).setSparkHome( System.getenv("SPARK_HOME") )
     val sc = new SparkContext(conf)
 
     val ratings = sc.textFile(args(1)).map { line =>
-      val fields = line.split("\\s")
+      val fields = line.split(",")
       // format: (timestamp % 10, Rating(userId, movieId, rating))
-      (fields(3).toLong % 10, Rating(fields(0).toInt, fields(1).toInt, fields(2).toDouble))
+      (fields(3).toLong % 10, Rating(fields(0).toInt , fields(1).toInt, fields(2).toDouble))
     }
 
-    val movies = sc.textFile(args(2)).map { line =>
-      val fields = line.split("\\s")
-      // format: (movieId, movieName)
-      (fields(0).toInt, fields(1))
-    }.collect.toMap
 
+    // val movies = sc.textFile(args(2)).map { line =>
+    //   val fields = line.split(",")
+    //   // format: (movieId, movieName)
+    //   (fields(0).toInt, fields(2))
+    // }.collect.toMap
 
-//    val numRatings = ratings.count
-//    val numUsers = ratings.map(_._2.user).distinct.count
-//    val numMovies = ratings.map(_._2.product).distinct.count
-//
-//    println("Got " + numRatings + " ratings from "
-//      + numUsers + " users on " + numMovies + " movies.")
-
-    // sample a subset of most rated movies for rating elicitation
-//
-//    val mostRatedMovieIds = ratings.map(_._2.product) // extract movie ids
-//      .countByValue      // count ratings per movie
-//      .toSeq             // convert map to Seq
-//      .sortBy(- _._2)    // sort by rating count
-//      .take(50)          // take 50 most rated
-//      .map(_._1)         // get their ids
-//    val random = new Random(0)
-//    val selectedMovies = mostRatedMovieIds.filter(x => random.nextDouble() < 0.2)
-//      .map(x => (x, movies(x)))
-//      .toSeq
-//
-//    // elicitate ratings
-//
-//    val myRatings = elicitateRatings(selectedMovies)
-//    val myRatingsRDD = sc.parallelize(myRatings, 1)
-
-    // split ratings into train (60%), validation (20%), and test (20%) based on the
-    // last digit of the timestamp, add myRatings to train, and cache them
-
-    val numPartitions = 1
+    val numPartitions = 50
     val training = ratings.filter(x => x._1 < 6)
       .values
-//      .union(myRatingsRDD)
       .repartition(numPartitions)
       .persist
     val validation = ratings.filter(x => x._1 >= 6 && x._1 < 8)
@@ -75,25 +56,23 @@ object CF1 {
       .persist
     val test = ratings.filter(x => x._1 >= 8).values.persist
 
-    val numTraining = training.count
-    val numValidation = validation.count
-    val numTest = test.count
-
-    println("Training: " + numTraining + ", validation: " + numValidation + ", test: " + numTest)
-
     // train models and evaluate them on the validation set
+//    val ranks = List(100, 200)
+//    val lambdas = List(0.1, 10.0)
+//    val numIters = List(10, 20)
+        val ranks = List(args(2).toInt)
+        val lambdas = List(10.0)
+        val numIters = List(args(3).toInt)
 
-    val ranks = List(8, 12)
-    val lambdas = List(0.1, 10.0)
-    val numIters = List(10, 20)
     var bestModel: Option[MatrixFactorizationModel] = None
     var bestValidationRmse = Double.MaxValue
     var bestRank = 0
     var bestLambda = -1.0
     var bestNumIter = -1
     for (rank <- ranks; lambda <- lambdas; numIter <- numIters) {
+      println("Ranks is "+rank+" and inter is "+numIter)
       val model = ALS.train(training, rank, numIter, lambda)
-      val validationRmse = computeRmse(model, validation, numValidation)
+      val validationRmse = computeRmse(model, validation, validation.count())
       println("RMSE (validation) = " + validationRmse + " for the model trained with rank = "
         + rank + ", lambda = " + lambda + ", and numIter = " + numIter + ".")
       if (validationRmse < bestValidationRmse) {
@@ -104,38 +83,19 @@ object CF1 {
         bestNumIter = numIter
       }
     }
+    val myRatings = ratings.filter{ case( t , r ) =>  r.user == 823519 }.map{ case ( k , v ) => (v.user , v.product) }
+    val recommendations = bestModel.get
+      .predict(myRatings)
+      .collect
+      .sortBy(- _.rating)
+      .take(50)
 
-    // evaluate the best model on the test set
-
-    val testRmse = computeRmse(bestModel.get, test, numTest)
-
-    println("The best model was trained with rank = " + bestRank + " and lambda = " + bestLambda
-      + ", and numIter = " + bestNumIter + ", and its RMSE on the test set is " + testRmse + ".")
-
-    // create a naive baseline and compare it with the best model
-
-//    val meanRating = training.union(validation).map(_.rating).mean
-//    val baselineRmse = math.sqrt(test.map(x => (meanRating - x.rating) * (meanRating - x.rating))
-//      .reduce(_ + _) / numTest)
-//    val improvement = (baselineRmse - testRmse) / baselineRmse * 100
-//    println("The best model improves the baseline by " + "%1.2f".format(improvement) + "%.")
-
-    // make personalized recommendations
-
-//    val myRatedMovieIds = myRatings.map(_.product).toSet
-//    val candidates = sc.parallelize(movies.keys.filter(!myRatedMovieIds.contains(_)).toSeq)
-//    val recommendations = bestModel.get
-//      .predict(candidates.map((0, _)))
-//      .collect
-//      .sortBy(- _.rating)
-//      .take(50)
-//
-//    var i = 1
-//    println("Movies recommended for you:")
-//    recommendations.foreach { r =>
-//      println("%2d".format(i) + ": " + movies(r.product))
-//      i += 1
-//    }
+    // var i = 1
+    // println("Movies recommended for you:")
+    // recommendations.foreach { r =>
+    //   println("%2d".format(i) + ": " + movies(r.product))
+    //   i += 1
+    // }
 
     // clean up
 
@@ -151,38 +111,5 @@ object CF1 {
     math.sqrt(predictionsAndRatings.map(x => (x._1 - x._2) * (x._1 - x._2)).reduce(_ + _) / n)
   }
 
-  /** Elicitate ratings from command-line. */
-  def elicitateRatings(movies: Seq[(Int, String)]) = {
-    val prompt = "Please rate the following movie (1-5 (best), or 0 if not seen):"
-    println(prompt)
-    val ratings = movies.flatMap { x =>
-      var rating: Option[Rating] = None
-      var valid = false
-      while (!valid) {
-        print(x._2 + ": ")
-        try {
-          val r = Console.readInt
-          if (r < 0 || r > 5) {
-            println(prompt)
-          } else {
-            valid = true
-            if (r > 0) {
-              rating = Some(Rating(0, x._1, r))
-            }
-          }
-        } catch {
-          case e: Exception => println(prompt)
-        }
-      }
-      rating match {
-        case Some(r) => Iterator(r)
-        case None => Iterator.empty
-      }
-    }
-    if(ratings.isEmpty) {
-      error("No rating provided!")
-    } else {
-      ratings
-    }
-  }
+
 }
