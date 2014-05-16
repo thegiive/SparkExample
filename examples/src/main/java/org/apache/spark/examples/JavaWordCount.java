@@ -40,7 +40,7 @@ public final class JavaWordCount {
 
         JavaRDD<String> lines = sc.textFile(args[0]);
         JavaPairRDD<String, Integer> counts = lines.flatMap(line -> Arrays.asList(line.split(" ")))
-                                                    .mapToPair(w -> new Tuple2<>(w, 1))
+                                                    .mapToPair(w -> new Tuple2<String,Integer>(w, 1))
                                                     .reduceByKey((x, y) -> x + y);
 
         System.out.println("Word count is " + counts.count() + " .");

@@ -52,7 +52,7 @@ public class JavaALS {
         });
 
 
-        int numPartitions = 3;
+        int numPartitions = 50;
 
         JavaRDD<Rating> training = ratings.filter( x -> x._1() < 6).values().repartition(numPartitions).cache();
         JavaRDD<Rating> validation = ratings.filter( x -> x._1() >= 6 && x._1() < 8).values().repartition(numPartitions).cache();
