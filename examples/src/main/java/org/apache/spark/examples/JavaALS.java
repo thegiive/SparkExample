@@ -95,10 +95,17 @@ public class JavaALS {
 //        }
 
         MatrixFactorizationModel bestModel = ALS.train(training.rdd(), rank, 8 , lambda);
-        List result = findTop10(bestModel , sc , 6040 , 3952 );
+//        Object alist = bestModel.userFeatures().toArray();
+        for( Tuple2<Object , double[]> t : bestModel.userFeatures().toJavaRDD().collect() ){
+            if(((Integer)t._1()) == 5000) {
+                System.out.println(t._1());
+                System.out.println(t._2());
+            }
+        }
+//        List result = findTop10(bestModel , sc , 6040 , 3952 );
 
-        System.out.println(result);
-        System.out.println(findTop10(bestModel , sc , 6039 , 3952 ));
+//        System.out.println(result);
+//        System.out.println(findTop10(bestModel , sc , 6039 , 3952 ));
 //        List<Tuple2<Integer , Integer>> arr = new ArrayList<>();
 //        for(int i = 1 ; i <= 3952 ; i++){
 //            arr.add( new Tuple2(6040 , i));
