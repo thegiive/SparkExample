@@ -1,18 +1,16 @@
 package org.apache.spark.examples;
 
-import breeze.linalg.product;
 import org.apache.spark.SparkConf;
-import org.apache.spark.SparkContext;
-import org.apache.spark.api.java.*;
-import org.apache.spark.mllib.recommendation.*;
+import org.apache.spark.api.java.JavaPairRDD;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.rdd.RDD;
 import scala.Tuple2;
-import scala.tools.nsc.transform.patmat.MatchAnalysis;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class JavaALS {
+public class JavaALSFindBestParams {
 
     /** Compute RMSE (Root Mean Squared Error). */
     public static double computeRmse(MatrixFactorizationModel model , JavaRDD<Rating> data, Long n){
@@ -33,17 +31,6 @@ public class JavaALS {
         return Math.sqrt(msr);
 
     }
-
-    public static List findTop10(MatrixFactorizationModel model, JavaSparkContext sc , int user_id , int total_product){
-        List<Tuple2<Integer , Integer>> arr = new ArrayList<>();
-        for(int i = 1 ; i <= total_product ; i++){
-            arr.add( new Tuple2( user_id, i));
-        }
-        JavaRDD testdata = sc.parallelize(arr);
-        JavaRDD<Rating> prediction = model.predict(testdata.rdd()).toJavaRDD();
-        return prediction.mapToPair(p -> new Tuple2(p.rating() , p.product() )).sortByKey(false).take(10) ;
-    }
-
 
     public static void main(String[] args) {
 
@@ -98,27 +85,6 @@ public class JavaALS {
 
         System.out.println("Best Setting is iter="+bestNumIter+" lambda="+lambda);
 
-
-//        MatrixFactorizationModel bestModel = ALS.train(training.rdd(), rank, 8 , lambda);
-////        Object alist = bestModel.userFeatures().toArray();
-//        for( Tuple2<Object , double[]> t : bestModel.userFeatures().toJavaRDD().collect() ){
-//            if(((Integer)t._1()) == 5000) {
-//                System.out.println(t._1());
-//                System.out.println(t._2());
-//            }
-//        }
-//        List result = findTop10(bestModel , sc , 6040 , 3952 );
-
-//        System.out.println(result);
-//        System.out.println(findTop10(bestModel , sc , 6039 , 3952 ));
-//        List<Tuple2<Integer , Integer>> arr = new ArrayList<>();
-//        for(int i = 1 ; i <= 3952 ; i++){
-//            arr.add( new Tuple2(6040 , i));
-//        }
-//        JavaRDD testdata = sc.parallelize(arr);
-//        JavaRDD<Rating> prediction = bestModel.predict(testdata.rdd()).toJavaRDD();
-//        System.out.println(prediction.mapToPair(p -> new Tuple2(p.rating() , p.product() )).sortByKey(false).take(10));
-//        System.out.println(prediction.take(10));
         sc.stop();
 
     }
