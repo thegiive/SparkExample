@@ -47,13 +47,18 @@ public class JavaALS {
 
     public static void main(String[] args) {
 
-        if (args.length < 2) {
-            System.err.println("Usage: JavaALS <file> <rank> <iters>");
+        if (args.length < 4) {
+            System.err.println("Usage: JavaALS <file> <rank> <lambda> <numpartintion>");
             System.exit(1);
         }
 
         JavaSparkContext sc = new JavaSparkContext(new SparkConf().setAppName("JavaALS"));
+
         JavaRDD<String> lines = sc.textFile(args[0]);
+        int rank = Integer.parseInt(args[1]) ;
+        double lambda = Double.parseDouble(args[2]) ;
+        int numPartitions = Integer.parseInt(args[3]) ;
+
 
         JavaPairRDD<Long, Rating> ratings = lines.mapToPair(line -> {
             String[] arr = line.split(",");
@@ -63,11 +68,8 @@ public class JavaALS {
         });
 
 
-        int rank = Integer.parseInt(args[1]) ;
-        double lambda = 10.0 ;
-//        int numIter = Integer.parseInt(args[2]) ;
-        int numPartitions = Integer.parseInt(args[2]) ;
 
+        // Seperate the data
         JavaRDD<Rating> training = ratings.filter( x -> x._1() < 6).values().repartition(numPartitions).cache();
         JavaRDD<Rating> validation = ratings.filter( x -> x._1() >= 6 && x._1() < 8).values().repartition(numPartitions).cache();
         JavaRDD<Rating> test = ratings.filter( x -> x._1() >= 8).values().cache();
@@ -77,43 +79,24 @@ public class JavaALS {
         Double minRmse = 100.0;
         int bestNumIter = 0 ;
 
-//        for( int numIter = 3 ; numIter <= 30 ; numIter ++ ) {
-//            MatrixFactorizationModel model = ALS.train(training.rdd(), rank, numIter, lambda);
-//            Double validationRmse = computeRmse(model, validation, validation.count());
-//            System.out.println("RMSE (validation) = " + validationRmse + " for the model trained with rank = "
-//                    + rank + ", lambda = " + lambda + ", and numIter = " + numIter + ".");
-//            if( minRmse < validationRmse ){
-//                System.out.println("Stop!!!");
-//                System.out.println("RMSE (validation) = " + validationRmse + " previous RMSE is "+minRmse+"for the model trained with rank = "
-//                        + rank + ", lambda = " + lambda + ", and numIter = " + numIter + ".");
-//                bestNumIter = numIter - 1 ;
-//
-//                break ;
-//            }else{
-//                minRmse = validationRmse;
-//            }
-//        }
+        for( int numIter = 3 ; numIter <= 30 ; numIter ++ ) {
+            MatrixFactorizationModel model = ALS.train(training.rdd(), rank, numIter, lambda);
+            Double validationRmse = computeRmse(model, validation, validation.count());
+            System.out.println("RMSE (validation) = " + validationRmse + " for the model trained with rank = "
+                    + rank + ", lambda = " + lambda + ", and numIter = " + numIter + ".");
+            if( minRmse < validationRmse ){
+                System.out.println("Stop!!!");
+                System.out.println("RMSE (validation) = " + validationRmse + " previous RMSE is "+minRmse+"for the model trained with rank = "
+                        + rank + ", lambda = " + lambda + ", and numIter = " + numIter + ".");
+                bestNumIter = numIter - 1 ;
 
-        MatrixFactorizationModel bestModel = ALS.train(training.rdd(), rank, 8 , lambda);
-//        Object alist = bestModel.userFeatures().toArray();
-        for( Tuple2<Object , double[]> t : bestModel.userFeatures().toJavaRDD().collect() ){
-            if(((Integer)t._1()) == 5000) {
-                System.out.println(t._1());
-                System.out.println(t._2());
+                break ;
+            }else{
+                minRmse = validationRmse;
             }
         }
-//        List result = findTop10(bestModel , sc , 6040 , 3952 );
 
-//        System.out.println(result);
-//        System.out.println(findTop10(bestModel , sc , 6039 , 3952 ));
-//        List<Tuple2<Integer , Integer>> arr = new ArrayList<>();
-//        for(int i = 1 ; i <= 3952 ; i++){
-//            arr.add( new Tuple2(6040 , i));
-//        }
-//        JavaRDD testdata = sc.parallelize(arr);
-//        JavaRDD<Rating> prediction = bestModel.predict(testdata.rdd()).toJavaRDD();
-//        System.out.println(prediction.mapToPair(p -> new Tuple2(p.rating() , p.product() )).sortByKey(false).take(10));
-//        System.out.println(prediction.take(10));
+        System.out.println("Best Setting is iter="+bestNumIter+" lambda="+lambda);
 
         sc.stop();
 
