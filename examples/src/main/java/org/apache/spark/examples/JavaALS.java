@@ -9,10 +9,7 @@ import org.apache.spark.rdd.RDD;
 import scala.Tuple2;
 import scala.tools.nsc.transform.patmat.MatchAnalysis;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 public class JavaALS {
 
@@ -76,7 +73,8 @@ public class JavaALS {
         // Seperate the data
         JavaRDD<Rating> training = ratings.filter( x -> x._1() < 6).values().repartition(numPartitions).cache();
         JavaRDD<Rating> validation = ratings.filter( x -> x._1() >= 6 && x._1() < 8).values().repartition(numPartitions).cache();
-        JavaRDD<Rating> test = ratings.filter( x -> x._1() >= 8).values().cache();
+        JavaRDD<Rating> test = ratings.filter( x -> x._1() >= 8).values();
+        JavaPairRDD<Integer,ArrayList<Integer>> testr = test.mapToPair( r -> new Tuple2(r.user() , r.product() )).groupByKey().cache();
 
 //        System.out.println("Start Iteration");
 //
@@ -104,13 +102,13 @@ public class JavaALS {
 
 
         MatrixFactorizationModel bestModel = ALS.train(training.rdd(), rank, iter , lambda);
-        bestModel.userFeatures().toJavaRDD().mapToPair(s -> {
-            Integer user_id = (Integer)s._1(); double[] feature_array = s._2(); int i = 1 ;
-            ArrayList<Tuple2<Integer,Double>> result = new ArrayList();
-            for( double f : feature_array) result.add(new Tuple2(i++,f));
-            result.sort( (a, b) -> a._2() >= b._2() ? -1 : 1 );
-            return new Tuple2( user_id , result.subList(0,4));
-        }).saveAsTextFile(outputFilePrefix+"/user_feature.txt");
+//        bestModel.userFeatures().toJavaRDD().mapToPair(s -> {
+//            Integer user_id = (Integer)s._1(); double[] feature_array = s._2(); int i = 1 ;
+//            ArrayList<Tuple2<Integer,Double>> result = new ArrayList();
+//            for( double f : feature_array) result.add(new Tuple2(i++,f));
+//            result.sort( (a, b) -> a._2() >= b._2() ? -1 : 1 );
+//            return new Tuple2( user_id , result.subList(0,4));
+//        }).saveAsTextFile(outputFilePrefix+"/user_feature.txt");
 
         JavaPairRDD<Integer, Tuple2<Double,Integer>> pf = bestModel.productFeatures().toJavaRDD().flatMapToPair(s->{
             Integer product_id = (Integer)s._1(); double[] feature_array = s._2(); int feature_id = 1 ;
@@ -121,12 +119,75 @@ public class JavaALS {
             return result ;
         });//.saveAsTextFile(outputFilePrefix+"/product_feature.txt");;
 //        pf.groupByKey().
-        pf.groupByKey().mapValues(v -> {
+        JavaPairRDD<Integer , ArrayList<Tuple2>> ppf =  pf.groupByKey().mapValues(v -> {
             ArrayList<Tuple2<Double, Integer>> result = new ArrayList();
             v.forEach(t -> result.add(t));
             result.sort((a,b) -> a._1() >= b._1() ? -1 : 1 );
             return new ArrayList<Tuple2>(result.subList(0, 4));
-        }).saveAsTextFile(outputFilePrefix+"/product_feature.txt");
+        });//.saveAsTextFile(outputFilePrefix+"/product_feature.txt");
+
+        HashMap<Integer, String> hm = new HashMap() ;
+        List<Tuple2<Integer , ArrayList<Tuple2>>> ppf_list = ppf.collect();
+        for( Tuple2 t : ppf_list ){
+            String result ="";
+              for( Tuple2 tt : (ArrayList<Tuple2>) t._2()){
+                result += tt._1()+","+tt._2()+"#";
+              }
+            hm.put((Integer)t._1() , result );
+        }
+
+        JavaPairRDD<Integer, ArrayList<Tuple2>> uf = bestModel.userFeatures().toJavaRDD().mapToPair(s -> {
+            Integer user_id = (Integer)s._1(); double[] feature_array = s._2(); int i = 1 ;
+            ArrayList<Tuple2<Integer,Double>> result = new ArrayList();
+            for( double f : feature_array) result.add(new Tuple2(i++,f));
+            result.sort( (a, b) -> a._2() >= b._2() ? -1 : 1 );
+            return new Tuple2( user_id , new ArrayList(result.subList(0,4)));
+        });//.saveAsTextFile(outputFilePrefix+"/user_feature.txt");
+
+        JavaPairRDD<Integer, ArrayList<Integer>> up = uf.mapValues( s -> {
+            ArrayList<Tuple2<Integer,Double>> tresult = new ArrayList();
+            s.forEach( t -> {
+                int feature_id = (int)t._1() ;
+                double feature_params = (double)t._2();
+
+                String r = hm.get( feature_id );
+                for( String r1 : r.split("#")) {
+                    String[] tarr = r1.split(",") ;
+                    double product_feature_params = Double.parseDouble(tarr[0]);
+                    int product_id = Integer.parseInt(tarr[1]);
+                    tresult.add( new Tuple2(product_id, product_feature_params*feature_params));
+                }
+            });
+            tresult.sort((a,b) -> a._2() >= b._2() ? -1 : 1 );
+            ArrayList<Integer> result = new ArrayList();
+            for( Tuple2<Integer,Double> t : tresult){
+                result.add(t._1());
+            }
+            return result ;
+        });
+
+        up.saveAsTextFile(outputFilePrefix+"/model.txt");
+
+        JavaRDD<Integer> final_predict_result = testr.join(up).flatMap(t -> {
+            Integer user_id = t._1();
+            ArrayList<Integer> tmp_result = new ArrayList(t._2()._1()) ;
+            ArrayList<Integer> tmp_predict = new ArrayList(t._2()._2()) ;
+            ArrayList<Integer> result = new ArrayList();
+            for (Integer r : tmp_result) {
+                if( tmp_predict.contains(r) ){
+                    result.add(1);
+                }else{
+                    result.add(0);
+                }
+            }
+            return result ;
+        });
+
+
+        System.out.println(final_predict_result.filter(i -> i == 1).count());
+        System.out.println(final_predict_result.count());
+
+//        System.out.println(testr.join(up).take(5));
 
 //        bestModel.productFeatures().toJavaRDD().mapToPair(s -> new Tuple2( s._1() , Arrays.toString(s._2()) ) ).saveAsTextFile(outputFilePrefix+"/product_feature.txt");
 
