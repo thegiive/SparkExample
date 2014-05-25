@@ -6,6 +6,7 @@ import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.rdd.RDD;
 import scala.Tuple2;
+import org.apache.spark.mllib.recommendation.*;
 
 import java.util.ArrayList;
 import java.util.List;
