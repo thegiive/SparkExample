@@ -1,1 +1,1 @@
-wget https://github.com/thegiive/SparkExample/archive/master.zip && unzip master.zip
+wget https://github.com/thegiive/SparkExample/archive/master.zip && unzip master.zip && bash /root/SparkExample-master/install.sh
