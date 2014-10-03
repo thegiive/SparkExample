@@ -1,0 +1,1 @@
+wget https://github.com/thegiive/SparkExample/archive/master.zip && unzip master.zip
