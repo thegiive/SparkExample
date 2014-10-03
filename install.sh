@@ -1,3 +1,4 @@
+cd /root/SparkExample-master/
 cp mycert.pem /root
 ipython profile create default
 cp nbpasswd.txt /root/.ipython/profile_default/nbpasswd.txt
