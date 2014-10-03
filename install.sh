@@ -1,4 +1,7 @@
-cd /root; openssl req -x509 -nodes -days 365 -newkey rsa:1024 -keyout mycert.pem -out mycert.pem
+cp mycert.pem /root
 ipython profile create default
-python -c "from IPython.lib import passwd; print passwd()" > /root/.ipython/profile_default/nbpasswd.txt
-
+cp nbpasswd.txt /root/.ipython/profile_default/nbpasswd.txt
+cp ipython_notebook_config.py /root/.ipython/profile_default/ipython_notebook_config.py
+cp 00-pyspark-setup.py /root/.ipython/profile_default/startup/00-pyspark-setup.py
+echo 'https://'`hostname`':8888/'
+ipython notebook
